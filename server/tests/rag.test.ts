@@ -42,12 +42,13 @@ describe("AI & RAG Security and Pipeline Tests", () => {
 
   it("throws clear error when Gemini API key is missing instead of returning silent mock strings", async () => {
     const unconfiguredProvider = new GeminiProvider();
+    (unconfiguredProvider as any).genAI = null;
     await expect(
       unconfiguredProvider.generateChatCompletion({
         message: "What is artificial intelligence?",
         history: [],
       }),
-    ).rejects.toThrow("Gemini API Key is missing or invalid");
+    ).rejects.toThrow("Google Gemini API Key is missing or invalid");
   });
 
   it("allows valid student queries and cleans whitespace", () => {

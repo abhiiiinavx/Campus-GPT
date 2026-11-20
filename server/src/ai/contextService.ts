@@ -100,19 +100,50 @@ export class ContextService {
         );
 
         metadata.timetableData = true;
-        lines.push(`\n=== STUDENT TIMETABLE ===`);
-        const todaySlots = timetableEntries.filter(
-          (t) => t.dayOfWeek === todayDay,
-        );
-        lines.push(`Today (${todayDay}):`);
+        lines.push(`\n=== STUDENT TIMETABLE (ABES ENGINEERING COLLEGE - CSE-12) ===`);
+        lines.push(`Department: ${student.department.name}, Semester: 5th Semester (Section 12), Room: KC-TF-305`);
+        lines.push(`Official Period Timings:`);
+        lines.push(`- P1: 08:50 - 09:40 | P2: 09:40 - 10:30 | P3: 10:40 - 11:30 | P4: 11:30 - 12:20 | P5: 12:20 - 13:10`);
+        lines.push(`- LUNCH BREAK: 13:10 - 14:00 (1:10 PM - 2:00 PM)`);
+        lines.push(`- P6: 14:00 - 14:50 | P7: 14:50 - 15:40 | P8: 15:40 - 16:30`);
+
+        lines.push(`\nToday's Schedule (${todayDay}):`);
+        const todaySlots = timetableEntries
+          .filter((t) => t.dayOfWeek === todayDay)
+          .sort((a, b) => a.startTime.localeCompare(b.startTime));
         if (todaySlots.length === 0) {
           lines.push(`  No classes scheduled for today.`);
         } else {
           todaySlots.forEach((slot) => {
             lines.push(
-              `  - ${slot.startTime} - ${slot.endTime}: ${slot.subject.name} (${slot.subject.code}) in Room ${slot.room}, Faculty: ${slot.faculty.user.fullName}`,
+              `  - ${slot.startTime} - ${slot.endTime}: ${slot.subject.name} (${slot.subject.code}) in ${slot.room}, Faculty: ${slot.faculty.user.fullName}`,
             );
           });
+        }
+
+        lines.push(`\nFull Weekly Timetable Schedule (Monday to Friday):`);
+        const daysToInclude: DayOfWeek[] = [
+          DayOfWeek.MONDAY,
+          DayOfWeek.TUESDAY,
+          DayOfWeek.WEDNESDAY,
+          DayOfWeek.THURSDAY,
+          DayOfWeek.FRIDAY,
+        ];
+
+        for (const d of daysToInclude) {
+          const dSlots = timetableEntries
+            .filter((t) => t.dayOfWeek === d)
+            .sort((a, b) => a.startTime.localeCompare(b.startTime));
+          lines.push(`* ${d}:`);
+          if (dSlots.length === 0) {
+            lines.push(`    - No classes`);
+          } else {
+            dSlots.forEach((s) => {
+              lines.push(
+                `    - ${s.startTime} - ${s.endTime}: ${s.subject.name} (${s.subject.code}), Room: ${s.room}, Faculty: ${s.faculty.user.fullName}`,
+              );
+            });
+          }
         }
 
         // 3. Active notices summary

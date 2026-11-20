@@ -56,7 +56,9 @@ export const StudentTimetablePage = () => {
     );
   }
 
-  const daySlots = entries.filter((e) => e.dayOfWeek === selectedDay);
+  const daySlots = entries
+    .filter((e) => e.dayOfWeek === selectedDay)
+    .sort((a, b) => a.startTime.localeCompare(b.startTime));
 
   return (
     <div className="space-y-6 pb-12">

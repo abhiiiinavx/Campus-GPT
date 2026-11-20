@@ -51,10 +51,10 @@ export class StudentService {
       (s) => s.isShortage,
     );
 
-    // Filter today's timetable
-    const todayTimetable = allTimetableEntries.filter(
-      (t) => t.dayOfWeek === todayDay,
-    );
+    // Filter today's timetable sorted chronologically
+    const todayTimetable = allTimetableEntries
+      .filter((t) => t.dayOfWeek === todayDay)
+      .sort((a, b) => a.startTime.localeCompare(b.startTime));
 
     // Calculate next class
     const now = new Date();
