@@ -84,7 +84,7 @@ export class GeminiProvider {
 
     try {
       const model = this.genAI.getGenerativeModel({
-        model: env.GEMINI_MODEL || "gemini-1.5-flash",
+        model: env.GEMINI_MODEL || "gemini-3.5-flash-lite",
         systemInstruction: systemInstruction || undefined,
         generationConfig: {
           temperature: 0.7,

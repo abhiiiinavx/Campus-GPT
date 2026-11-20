@@ -26,7 +26,7 @@ const envSchema = z.object({
   JWT_ACCESS_EXPIRES_IN: z.string().default("15m"),
   JWT_REFRESH_EXPIRES_IN: z.string().default("7d"),
   GEMINI_API_KEY: z.string().optional().default(""),
-  GEMINI_MODEL: z.string().default("gemini-1.5-flash"),
+  GEMINI_MODEL: z.string().default("gemini-3.5-flash-lite"),
   EMBEDDING_MODEL: z.string().default("text-embedding-004"),
   MAX_FILE_SIZE_MB: z.coerce.number().default(10),
   UPLOAD_DIR: z.string().default("uploads/documents"),
