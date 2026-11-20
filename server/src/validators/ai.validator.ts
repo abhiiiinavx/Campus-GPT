@@ -4,6 +4,18 @@ export const chatMessageSchema = z.object({
   message: z
     .string()
     .min(1, "Message cannot be empty")
-    .max(1000, "Message cannot exceed 1000 characters")
+    .max(4000, "Message cannot exceed 4000 characters")
     .trim(),
+  history: z
+    .array(
+      z.object({
+        role: z.enum(["user", "model", "assistant"]),
+        text: z.string(),
+      }),
+    )
+    .optional()
+    .default([]),
+  conversationId: z.string().optional(),
 });
+
+export type ChatMessageInput = z.infer<typeof chatMessageSchema>;

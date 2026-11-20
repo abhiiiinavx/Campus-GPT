@@ -77,9 +77,15 @@ export interface RAGSource {
   snippet?: string;
 }
 
+export interface ChatHistoryItem {
+  role: "user" | "model" | "assistant";
+  text: string;
+}
+
 export interface AIChatResponse {
   answer: string;
   sources: RAGSource[];
+  conversationId?: string;
   contextUsed?: {
     studentProfile?: boolean;
     attendanceData?: boolean;

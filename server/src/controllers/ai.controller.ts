@@ -19,6 +19,7 @@ export class AIController {
       const aiResponse = await aiService.processChatMessage(
         req.user,
         validated.message,
+        validated.history,
       );
 
       return sendSuccess(

@@ -1,25 +1,43 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { env } from "../config/env.js";
+import { AppError } from "../middleware/errorHandler.js";
+import { ChatHistoryItem } from "../types/index.js";
 
 export class GeminiProvider {
   private genAI: GoogleGenerativeAI | null = null;
 
   constructor() {
+    this.init();
+  }
+
+  private init() {
+    const key = env.GEMINI_API_KEY?.trim();
     if (
-      env.GEMINI_API_KEY &&
-      env.GEMINI_API_KEY !== "your_google_gemini_api_key_here"
+      key &&
+      key !== "your_google_gemini_api_key_here" &&
+      key !== "mock_dev_key_or_user_key" &&
+      !key.startsWith("mock_")
     ) {
-      this.genAI = new GoogleGenerativeAI(env.GEMINI_API_KEY);
+      this.genAI = new GoogleGenerativeAI(key);
+    } else {
+      this.genAI = null;
     }
   }
 
   isConfigured(): boolean {
-    return !!this.genAI;
+    const key = env.GEMINI_API_KEY?.trim();
+    return (
+      !!this.genAI &&
+      !!key &&
+      key !== "your_google_gemini_api_key_here" &&
+      key !== "mock_dev_key_or_user_key" &&
+      !key.startsWith("mock_")
+    );
   }
 
   /**
    * Generates 768-dimensional text embeddings using Google text-embedding-004
-   * With deterministic vector fallback when offline / no key
+   * With deterministic vector fallback when offline / unconfigured
    */
   async generateEmbedding(text: string): Promise<number[]> {
     const clean = text.trim();
@@ -27,10 +45,10 @@ export class GeminiProvider {
       return new Array(768).fill(0);
     }
 
-    if (this.genAI) {
+    if (this.isConfigured() && this.genAI) {
       try {
         const model = this.genAI.getGenerativeModel({
-          model: env.EMBEDDING_MODEL,
+          model: env.EMBEDDING_MODEL || "text-embedding-004",
         });
         const result = await model.embedContent(clean);
         const values = result.embedding?.values;
@@ -39,44 +57,129 @@ export class GeminiProvider {
         }
       } catch (err: any) {
         console.warn(
-          `Gemini embedding API call failed, using fallback vector: ${err?.message}`,
+          `Gemini embedding API call failed: ${err?.message}. Falling back to deterministic vector.`,
         );
       }
     }
 
-    // Fallback: Deterministic 768-dim hash embedding (for local/offline resilience)
     return this.generateDeterministicVector(clean, 768);
   }
 
   /**
-   * Generates grounded chat completion using Gemini
+   * Generates multi-turn chat completions using the configured Google Gemini model
    */
-  async generateCompletion(
-    prompt: string,
-    systemInstruction?: string,
-  ): Promise<string> {
-    if (this.genAI) {
-      try {
-        const model = this.genAI.getGenerativeModel({
-          model: env.GEMINI_MODEL,
-          systemInstruction: systemInstruction || undefined,
-          generationConfig: {
-            temperature: 0.2, // Low temperature for high factual accuracy
-            maxOutputTokens: 1024,
-          },
-        });
+  async generateChatCompletion(params: {
+    message: string;
+    history?: ChatHistoryItem[];
+    systemInstruction?: string;
+  }): Promise<string> {
+    const { message, history = [], systemInstruction } = params;
 
-        const result = await model.generateContent(prompt);
-        const response = await result.response;
-        return response.text();
-      } catch (err: any) {
-        console.warn(`Gemini generation API call failed: ${err?.message}`);
-        // Fallback grounded answer builder if key quota exceeded or temporary offline
-        return this.generateGroundedFallback(prompt, systemInstruction);
-      }
+    if (!this.isConfigured() || !this.genAI) {
+      throw new AppError(
+        "Google Gemini API Key is missing or invalid. Please configure a valid GEMINI_API_KEY in server/.env (obtain a free key from Google AI Studio: https://aistudio.google.com/app/apikey).",
+        400,
+      );
     }
 
-    return this.generateGroundedFallback(prompt, systemInstruction);
+    try {
+      const model = this.genAI.getGenerativeModel({
+        model: env.GEMINI_MODEL || "gemini-1.5-flash",
+        systemInstruction: systemInstruction || undefined,
+        generationConfig: {
+          temperature: 0.7,
+          maxOutputTokens: 2048,
+        },
+      });
+
+      // Prepare multi-turn history adhering strictly to Gemini's user/model alternation
+      const formattedHistory: Array<{
+        role: "user" | "model";
+        parts: Array<{ text: string }>;
+      }> = [];
+
+      for (const item of history) {
+        const text = item.text?.trim();
+        if (!text) continue;
+
+        const role: "user" | "model" =
+          item.role === "assistant" || item.role === "model"
+            ? "model"
+            : "user";
+
+        // Gemini history must start with "user"
+        if (formattedHistory.length === 0 && role !== "user") {
+          continue;
+        }
+
+        // Avoid consecutive turns with identical role by combining text
+        const last = formattedHistory[formattedHistory.length - 1];
+        if (last && last.role === role) {
+          last.parts[0].text += `\n${text}`;
+        } else {
+          formattedHistory.push({
+            role,
+            parts: [{ text }],
+          });
+        }
+      }
+
+      // If last history item is "user", pop it to let the new user message take turn
+      if (
+        formattedHistory.length > 0 &&
+        formattedHistory[formattedHistory.length - 1].role === "user"
+      ) {
+        formattedHistory.pop();
+      }
+
+      const chat = model.startChat({
+        history: formattedHistory,
+      });
+
+      const result = await chat.sendMessage(message);
+      const response = await result.response;
+      const responseText = response.text();
+
+      if (!responseText) {
+        throw new AppError(
+          "Gemini returned an empty response. Please rephrase your question.",
+          502,
+        );
+      }
+
+      return responseText;
+    } catch (err: any) {
+      console.error(`Gemini generation API error: ${err?.message || err}`);
+
+      const errMsg = err?.message || String(err);
+      if (errMsg.includes("API_KEY_INVALID") || errMsg.includes("API key not valid")) {
+        throw new AppError(
+          "The provided GEMINI_API_KEY is invalid. Please verify your API key in server/.env.",
+          401,
+        );
+      }
+      if (errMsg.includes("RESOURCE_EXHAUSTED") || errMsg.includes("429")) {
+        throw new AppError(
+          "Gemini API rate limit or quota exceeded. Please wait a moment and try again.",
+          429,
+        );
+      }
+      if (errMsg.includes("SAFETY")) {
+        throw new AppError(
+          "Response blocked by safety filters. Please adjust your prompt.",
+          400,
+        );
+      }
+
+      if (err instanceof AppError) {
+        throw err;
+      }
+
+      throw new AppError(
+        `Gemini AI processing error: ${errMsg}`,
+        502,
+      );
+    }
   }
 
   /**
@@ -97,7 +200,6 @@ export class GeminiProvider {
       vector[index] += 1.0;
     }
 
-    // L2 Normalize
     let norm = 0;
     for (let i = 0; i < dimensions; i++) {
       norm += vector[i] * vector[i];
@@ -111,32 +213,6 @@ export class GeminiProvider {
     }
 
     return vector;
-  }
-
-  /**
-   * Grounded fallback response synthesizer when API key is unconfigured or unavailable
-   */
-  private generateGroundedFallback(prompt: string, context?: string): string {
-    if (prompt.toLowerCase().includes("attendance")) {
-      return (
-        "Based on your campus academic record: Please review your subject-wise attendance in the dashboard. " +
-        "According to campus policy, a minimum of 75% attendance is required in each subject to appear for final examinations. " +
-        "If your attendance in any subject is below 75%, please consult the attendance tab to see the exact number of consecutive classes you must attend."
-      );
-    }
-    if (
-      prompt.toLowerCase().includes("timetable") ||
-      prompt.toLowerCase().includes("class")
-    ) {
-      return (
-        "Based on your campus schedule: Your upcoming classes are listed under your timetable section. " +
-        "Be sure to check room allocations and scheduled time slots to avoid missing any lectures."
-      );
-    }
-    return (
-      "I am your CampusIQ AI assistant. I have reviewed your student records and campus policy documents. " +
-      "Please let me know if you need specific calculations for your subject attendance, details about your timetable, or rules from official campus notices and documents."
-    );
   }
 }
 
